@@ -1,0 +1,41 @@
+name: R$(Rev:rrrr)-$(Build.DefinitionName)_$(BranchPrefix)$(Build.SourceBranchName)$(Rev:rrrr)
+
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+    
+jobs:
+  hello-world:
+    # Run on latest Ubuntu
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout the repository code
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # Simple echo hello world
+    - name: Echo Hello World
+      run: echo "Hello World from GitHub Actions!"
+    
+    # Echo with environment variables
+    - name: Echo with variables
+      run: |
+        echo "Repository: ${{ github.repository }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Actor: ${{ github.actor }}"
+        echo "Workflow: ${{ github.workflow }}"
+    
+    # Multi-line echo
+    - name: Multi-line echo
+      run: |
+        echo "=== GitHub Action Template ==="
+        echo "Hello World!"
+        echo "This is a simple GitHub Action template"
+        echo "Running on: $(date)"
+        echo "Current directory: $(pwd)"
+        echo "============================="
+      
