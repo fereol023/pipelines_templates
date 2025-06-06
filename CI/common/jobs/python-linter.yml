@@ -1,0 +1,286 @@
+# Python Linter Pipeline Template (Ruff)
+# This template can be extended by other repositories to run Python linting with Ruff on all files
+
+parameters:
+  # Python version to use
+  pythonVersion:
+    type: string
+    default: '3.11'
+    displayName: 'Python Version'
+  
+  # Folders to exclude from linting (space-separated)
+  excludeFolders:
+    type: string
+    default: ''
+    displayName: 'Folders to Exclude'
+  
+  # Files to exclude from linting (space-separated, supports glob patterns)
+  excludeFiles:
+    type: string
+    default: ''
+    displayName: 'Files to Exclude'
+  
+  # Additional exclusions (can include both files and folders, space-separated)
+  additionalExclusions:
+    type: string
+    default: ''
+    displayName: 'Additional Exclusions'
+  
+  # Ruff configuration file
+  ruffConfig:
+    type: string
+    default: 'pyproject.toml'
+    displayName: 'Ruff Config File'
+  
+  # Ruff options
+  runLinter:
+    type: boolean
+    default: true
+    displayName: 'Run Ruff Linter'
+  
+  runFormatter:
+    type: boolean
+    default: true
+    displayName: 'Run Ruff Formatter (check only)'
+  
+  # Show fixes
+  showFixes:
+    type: boolean
+    default: true
+    displayName: 'Show Suggested Fixes'
+  
+  # Target Python version for Ruff
+  targetVersion:
+    type: string
+    default: 'py311'
+    displayName: 'Target Python Version'
+    values:
+    - py38
+    - py39
+    - py310
+    - py311
+    - py312
+  
+  # Fail pipeline on linting errors
+  failOnErrors:
+    type: boolean
+    default: true
+    displayName: 'Fail Pipeline on Linting Errors'
+  
+  # Output format
+  outputFormat:
+    type: string
+    default: 'text'
+    displayName: 'Output Format'
+    values:
+    - text
+    - json
+    - junit
+    - github
+
+jobs:
+- job: RuffLinting
+  displayName: 'Python Code Linting with Ruff'
+  pool:
+    vmImage: 'ubuntu-latest'
+  
+  steps:
+  - task: UsePythonVersion@0
+    displayName: 'Set Python Version'
+    inputs:
+      versionSpec: '${{ parameters.pythonVersion }}'
+      addToPath: true
+  
+  - script: |
+      python -m pip install --upgrade pip
+      pip install ruff
+    displayName: 'Install Ruff'
+  
+  # Prepare exclusion patterns
+  - script: |
+      EXCLUDE_ARGS=""
+      
+      # Process folder exclusions
+      if [ -n "${{ parameters.excludeFolders }}" ]; then
+        for folder in ${{ parameters.excludeFolders }}; do
+          EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude $folder"
+        done
+      fi
+      
+      # Process file exclusions
+      if [ -n "${{ parameters.excludeFiles }}" ]; then
+        for file in ${{ parameters.excludeFiles }}; do
+          EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude $file"
+        done
+      fi
+      
+      # Process additional exclusions
+      if [ -n "${{ parameters.additionalExclusions }}" ]; then
+        for exclusion in ${{ parameters.additionalExclusions }}; do
+          EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude $exclusion"
+        done
+      fi
+      
+      # Add common exclusions if not already specified
+      COMMON_EXCLUSIONS="__pycache__ .git .venv .env venv env .pytest_cache .mypy_cache .ruff_cache node_modules"
+      for common in $COMMON_EXCLUSIONS; do
+        if [[ "${{ parameters.excludeFolders }} ${{ parameters.additionalExclusions }}" != *"$common"* ]]; then
+          EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude $common"
+        fi
+      done
+      
+      echo "##vso[task.setvariable variable=EXCLUDE_ARGS]$EXCLUDE_ARGS"
+      echo "Exclusion arguments: $EXCLUDE_ARGS"
+    displayName: 'Prepare Exclusion Patterns'
+  
+  # Check if config file exists
+  - script: |
+      if [ -f "${{ parameters.ruffConfig }}" ]; then
+        echo "Using config file: ${{ parameters.ruffConfig }}"
+        echo "##vso[task.setvariable variable=CONFIG_EXISTS]true"
+      else
+        echo "Config file not found: ${{ parameters.ruffConfig }}"
+        echo "##vso[task.setvariable variable=CONFIG_EXISTS]false"
+      fi
+    displayName: 'Check Config File'
+  
+  # Run Ruff Linter on all files (with exclusions)
+  - script: |
+      RUFF_CMD="ruff check ."
+      
+      # Add config file if it exists
+      if [ "$(CONFIG_EXISTS)" = "true" ]; then
+        RUFF_CMD="$RUFF_CMD --config ${{ parameters.ruffConfig }}"
+      fi
+      
+      # Add target version
+      RUFF_CMD="$RUFF_CMD --target-version ${{ parameters.targetVersion }}"
+      
+      # Add output format
+      RUFF_CMD="$RUFF_CMD --output-format ${{ parameters.outputFormat }}"
+      
+      # Add show fixes option
+      if [ "${{ parameters.showFixes }}" = "true" ]; then
+        RUFF_CMD="$RUFF_CMD --show-fixes"
+      fi
+      
+      # Add exclusion arguments
+      if [ -n "$(EXCLUDE_ARGS)" ]; then
+        RUFF_CMD="$RUFF_CMD $(EXCLUDE_ARGS)"
+      fi
+      
+      echo "Running: $RUFF_CMD"
+      eval $RUFF_CMD
+    displayName: 'Run Ruff Linter'
+    condition: and(succeededOrFailed(), eq('${{ parameters.runLinter }}', 'true'))
+    continueOnError: ${{ not(parameters.failOnErrors) }}
+  
+  # Run Ruff Formatter (check only) on all files (with exclusions)
+  - script: |
+      RUFF_CMD="ruff format --check --diff ."
+      
+      # Add config file if it exists
+      if [ "$(CONFIG_EXISTS)" = "true" ]; then
+        RUFF_CMD="$RUFF_CMD --config ${{ parameters.ruffConfig }}"
+      fi
+      
+      # Add target version
+      RUFF_CMD="$RUFF_CMD --target-version ${{ parameters.targetVersion }}"
+      
+      # Add exclusion arguments
+      if [ -n "$(EXCLUDE_ARGS)" ]; then
+        RUFF_CMD="$RUFF_CMD $(EXCLUDE_ARGS)"
+      fi
+      
+      echo "Running: $RUFF_CMD"
+      eval $RUFF_CMD
+    displayName: 'Run Ruff Formatter (Check Only)'
+    condition: and(succeededOrFailed(), eq('${{ parameters.runFormatter }}', 'true'))
+    continueOnError: ${{ not(parameters.failOnErrors) }}
+  
+  # List files that will be processed (for debugging)
+  - script: |
+      echo "=== Files to be processed by Ruff ===" > files-processed.txt
+      RUFF_CMD="ruff check . --output-format text"
+      
+      if [ "$(CONFIG_EXISTS)" = "true" ]; then
+        RUFF_CMD="$RUFF_CMD --config ${{ parameters.ruffConfig }}"
+      fi
+      
+      if [ -n "$(EXCLUDE_ARGS)" ]; then
+        RUFF_CMD="$RUFF_CMD $(EXCLUDE_ARGS)"
+      fi
+      
+      # Use --statistics to get file count info
+      RUFF_CMD="$RUFF_CMD --statistics --target-version ${{ parameters.targetVersion }}"
+      
+      eval $RUFF_CMD >> files-processed.txt 2>&1 || true
+      
+      echo "" >> files-processed.txt
+      echo "=== Python files in repository ===" >> files-processed.txt
+      find . -name "*.py" -type f | head -20 >> files-processed.txt
+      if [ $(find . -name "*.py" -type f | wc -l) -gt 20 ]; then
+        echo "... and $(( $(find . -name "*.py" -type f | wc -l) - 20 )) more files" >> files-processed.txt
+      fi
+    displayName: 'List Processed Files'
+    condition: always()
+    continueOnError: true
+  
+  # Generate detailed report with statistics
+  - script: |
+      echo "=== Ruff Linting Summary ===" > ruff-report.txt
+      echo "Python Version: ${{ parameters.pythonVersion }}" >> ruff-report.txt
+      echo "Target Version: ${{ parameters.targetVersion }}" >> ruff-report.txt
+      echo "Scan Scope: All files in repository (with exclusions)" >> ruff-report.txt
+      echo "Config File: ${{ parameters.ruffConfig }}" >> ruff-report.txt
+      echo "Linter Enabled: ${{ parameters.runLinter }}" >> ruff-report.txt
+      echo "Formatter Check Enabled: ${{ parameters.runFormatter }}" >> ruff-report.txt
+      echo "Show Fixes: ${{ parameters.showFixes }}" >> ruff-report.txt
+      echo "Output Format: ${{ parameters.outputFormat }}" >> ruff-report.txt
+      echo "Fail on Errors: ${{ parameters.failOnErrors }}" >> ruff-report.txt
+      echo "" >> ruff-report.txt
+      echo "=== Exclusions ===" >> ruff-report.txt
+      echo "Excluded Folders: ${{ parameters.excludeFolders }}" >> ruff-report.txt
+      echo "Excluded Files: ${{ parameters.excludeFiles }}" >> ruff-report.txt
+      echo "Additional Exclusions: ${{ parameters.additionalExclusions }}" >> ruff-report.txt
+      echo "Applied Exclusion Args: $(EXCLUDE_ARGS)" >> ruff-report.txt
+      echo "" >> ruff-report.txt
+      echo "Date: $(date)" >> ruff-report.txt
+      echo "" >> ruff-report.txt
+      
+      # Add Ruff version info
+      echo "=== Tool Information ===" >> ruff-report.txt
+      ruff --version >> ruff-report.txt
+    displayName: 'Generate Ruff Report'
+    condition: always()
+  
+  # Optional: Generate JSON output for further processing
+  - script: |
+      if [ "${{ parameters.outputFormat }}" != "json" ]; then
+        echo "Generating JSON report for processing..."
+        RUFF_CMD="ruff check . --output-format json"
+        
+        if [ "$(CONFIG_EXISTS)" = "true" ]; then
+          RUFF_CMD="$RUFF_CMD --config ${{ parameters.ruffConfig }}"
+        fi
+        
+        RUFF_CMD="$RUFF_CMD --target-version ${{ parameters.targetVersion }}"
+        
+        if [ -n "$(EXCLUDE_ARGS)" ]; then
+          RUFF_CMD="$RUFF_CMD $(EXCLUDE_ARGS)"
+        fi
+        
+        eval $RUFF_CMD > ruff-results.json 2>/dev/null || echo "[]" > ruff-results.json
+      fi
+    displayName: 'Generate JSON Report'
+    condition: always()
+    continueOnError: true
+  
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Ruff Reports'
+    inputs:
+      pathToPublish: '.'
+      artifactName: 'ruff-reports'
+      publishLocation: 'Container'
+    condition: always()
+    continueOnError: true
