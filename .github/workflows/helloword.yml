@@ -1,4 +1,6 @@
-name: ${{ github.run_number }}-${{ github.workflow }}_${{ github.ref_name }}
+name: Hello World Action
+# run id, repos name, nom du workflow ci dessus, branch name
+run-name: R${{ github.run_number }}-${{ github.event.repository.name }}-${{ github.workflow }}_${{ github.ref_name }}
 
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
