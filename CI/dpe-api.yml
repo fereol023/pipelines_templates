@@ -1,0 +1,13 @@
+parameters:
+- name: repositoryName
+  type: string
+- name: pythonVersion
+  type: string
+  default: '3.9'
+
+stages:
+  - stage:
+    jobs:
+      - template: ../common/jobs/github-python-linter.yml
+        parameters:
+          pythonVersion: ${{ parameters.pythonVersion }}
