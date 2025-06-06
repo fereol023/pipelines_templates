@@ -1,4 +1,4 @@
-name: R$(Rev:rrrr)-$(Build.DefinitionName)_$(BranchPrefix)$(Build.SourceBranchName)$(Rev:rrrr)
+name: ${{ github.run_number }}-${{ github.workflow }}_${{ github.ref_name }}
 
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
