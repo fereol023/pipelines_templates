@@ -1,1 +1,3 @@
-# dpe_pipelines_templates
+# pipelines_templates
+
+Reference repos for CICD pipelines - extensions 
