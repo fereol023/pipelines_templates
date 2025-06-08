@@ -1,0 +1,296 @@
+name: Python Pytest Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      pythonVersion:
+        description: 'Python Version'
+        required: false
+        default: '3.11'
+        type: string
+      excludeFolders:
+        description: 'Folders to Exclude (space-separated)'
+        required: false
+        default: ''
+        type: string
+      excludeFiles:
+        description: 'Files to Exclude (space-separated, supports glob patterns)'
+        required: false
+        default: ''
+        type: string
+      additionalExclusions:
+        description: 'Additional Exclusions (space-separated)'
+        required: false
+        default: ''
+        type: string
+      pytestConfig:
+        description: 'Pytest Config File'
+        required: false
+        default: 'pytest.ini'
+        type: string
+      testPattern:
+        description: 'Test File Pattern'
+        required: false
+        default: 'test_*.py *_test.py'
+        type: string
+      verboseOutput:
+        description: 'Verbose Output'
+        required: false
+        default: true
+        type: boolean
+      generateCoverage:
+        description: 'Generate Coverage Report'
+        required: false
+        default: true
+        type: boolean
+      coverageThreshold:
+        description: 'Coverage Threshold (%)'
+        required: false
+        default: '80'
+        type: string
+      failFast:
+        description: 'Stop on First Failure'
+        required: false
+        default: false
+        type: boolean
+      maxWorkers:
+        description: 'Max Parallel Workers'
+        required: false
+        default: 'auto'
+        type: string
+      runMarkers:
+        description: 'Run Tests with Markers'
+        required: false
+        default: ''
+        type: string
+      junitOutput:
+        description: 'Generate JUnit XML Report'
+        required: false
+        default: true
+        type: boolean
+      htmlReport:
+        description: 'Generate HTML Coverage Report'
+        required: false
+        default: true
+        type: boolean
+      failOnErrors:
+        description: 'Fail Pipeline on Test Failures'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  python-testing:
+    name: Python Testing with Pytest
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: ${{ inputs.pythonVersion }}
+      EXCLUDE_FOLDERS: ${{ inputs.excludeFolders }}
+      EXCLUDE_FILES: ${{ inputs.excludeFiles }}
+      ADDITIONAL_EXCLUSIONS: ${{ inputs.additionalExclusions }}
+      PYTEST_CONFIG: ${{ inputs.pytestConfig }}
+      TEST_PATTERN: ${{ inputs.testPattern }}
+      VERBOSE_OUTPUT: ${{ inputs.verboseOutput }}
+      GENERATE_COVERAGE: ${{ inputs.generateCoverage }}
+      COVERAGE_THRESHOLD: ${{ inputs.coverageThreshold }}
+      FAIL_FAST: ${{ inputs.failFast }}
+      MAX_WORKERS: ${{ inputs.maxWorkers }}
+      RUN_MARKERS: ${{ inputs.runMarkers }}
+      JUNIT_OUTPUT: ${{ inputs.junitOutput }}
+      HTML_REPORT: ${{ inputs.htmlReport }}
+      FAIL_ON_ERRORS: ${{ inputs.failOnErrors }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Pytest and Plugins with uv
+        run: |
+          uv --version
+          uv pip install pytest pytest-cov pytest-html pytest-xdist pytest-mock
+
+      - name: Install Project Dependencies with uv
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "Installing from requirements.txt"
+            uv pip install -r requirements.txt
+          elif [ -f requirements-dev.txt ]; then
+            echo "Installing from requirements-dev.txt"
+            uv pip install -r requirements-dev.txt
+          elif [ -f requirements-test.txt ]; then
+            echo "Installing from requirements-test.txt"
+            uv pip install -r requirements-test.txt
+          elif [ -f pyproject.toml ]; then
+            echo "Installing from pyproject.toml"
+            uv pip install -e .
+            uv pip install -e ".[test,dev]" 2>/dev/null || uv pip install -e ".[test]" 2>/dev/null || true
+          fi
+
+      - name: Prepare Exclusion Patterns
+        id: exclusions
+        run: |
+          IGNORE_ARGS=""
+          if [ -n "${EXCLUDE_FOLDERS}" ]; then
+            for folder in $EXCLUDE_FOLDERS; do
+              IGNORE_ARGS="$IGNORE_ARGS --ignore=$folder"
+            done
+          fi
+          if [ -n "${EXCLUDE_FILES}" ]; then
+            for file in $EXCLUDE_FILES; do
+              IGNORE_ARGS="$IGNORE_ARGS --ignore=$file"
+            done
+          fi
+          if [ -n "${ADDITIONAL_EXCLUSIONS}" ]; then
+            for exclusion in $ADDITIONAL_EXCLUSIONS; do
+              IGNORE_ARGS="$IGNORE_ARGS --ignore=$exclusion"
+            done
+          fi
+          COMMON_EXCLUSIONS="__pycache__ .git .venv .env venv env .pytest_cache .mypy_cache .ruff_cache node_modules build dist .tox"
+          for common in $COMMON_EXCLUSIONS; do
+            if [[ "${EXCLUDE_FOLDERS} ${ADDITIONAL_EXCLUSIONS}" != *"$common"* ]]; then
+              IGNORE_ARGS="$IGNORE_ARGS --ignore=$common"
+            fi
+          done
+          echo "ignore_args=$IGNORE_ARGS" >> $GITHUB_OUTPUT
+
+      - name: Check Config File
+        id: config
+        run: |
+          CONFIG_FILE=""
+          if [ -f "${PYTEST_CONFIG}" ]; then
+            CONFIG_FILE="-c ${PYTEST_CONFIG}"
+          elif [ -f "pyproject.toml" ]; then
+            CONFIG_FILE=""
+          elif [ -f "setup.cfg" ]; then
+            CONFIG_FILE=""
+          else
+            CONFIG_FILE=""
+          fi
+          echo "config_file=$CONFIG_FILE" >> $GITHUB_OUTPUT
+
+      - name: Discover Tests
+        run: |
+          echo "=== Test Discovery ===" > test-discovery.txt
+          echo "Test patterns: $TEST_PATTERN" >> test-discovery.txt
+          echo "Exclusions applied: ${{ steps.exclusions.outputs.ignore_args }}" >> test-discovery.txt
+          echo "" >> test-discovery.txt
+          PYTEST_CMD="uv run pytest --collect-only -q"
+          if [ -n "${{ steps.config.outputs.config_file }}" ]; then
+            PYTEST_CMD="$PYTEST_CMD ${{ steps.config.outputs.config_file }}"
+          fi
+          if [ -n "${{ steps.exclusions.outputs.ignore_args }}" ]; then
+            PYTEST_CMD="$PYTEST_CMD ${{ steps.exclusions.outputs.ignore_args }}"
+          fi
+          echo "Discovery command: $PYTEST_CMD" >> test-discovery.txt
+          eval $PYTEST_CMD >> test-discovery.txt 2>&1 || true
+
+      - name: Run Pytest with uv
+        id: pytest
+        run: |
+          PYTEST_CMD="uv run pytest"
+          if [ -n "${{ steps.config.outputs.config_file }}" ]; then
+            PYTEST_CMD="$PYTEST_CMD ${{ steps.config.outputs.config_file }}"
+          fi
+          if [ "${VERBOSE_OUTPUT}" = "true" ]; then
+            PYTEST_CMD="$PYTEST_CMD -v"
+          fi
+          if [ "${FAIL_FAST}" = "true" ]; then
+            PYTEST_CMD="$PYTEST_CMD -x"
+          fi
+          if [ "${MAX_WORKERS}" != "1" ]; then
+            if [ "${MAX_WORKERS}" = "auto" ]; then
+              PYTEST_CMD="$PYTEST_CMD -n auto"
+            else
+              PYTEST_CMD="$PYTEST_CMD -n ${MAX_WORKERS}"
+            fi
+          fi
+          if [ -n "${RUN_MARKERS}" ]; then
+            PYTEST_CMD="$PYTEST_CMD -m '${RUN_MARKERS}'"
+          fi
+          if [ "${GENERATE_COVERAGE}" = "true" ]; then
+            PYTEST_CMD="$PYTEST_CMD --cov=. --cov-report=term-missing"
+            if [ "${HTML_REPORT}" = "true" ]; then
+              PYTEST_CMD="$PYTEST_CMD --cov-report=html:htmlcov"
+            fi
+            PYTEST_CMD="$PYTEST_CMD --cov-report=xml --cov-fail-under=${COVERAGE_THRESHOLD}"
+          fi
+          if [ "${JUNIT_OUTPUT}" = "true" ]; then
+            PYTEST_CMD="$PYTEST_CMD --junitxml=pytest-results.xml"
+          fi
+          if [ "${HTML_REPORT}" = "true" ]; then
+            PYTEST_CMD="$PYTEST_CMD --html=pytest-report.html --self-contained-html"
+          fi
+          if [ -n "${{ steps.exclusions.outputs.ignore_args }}" ]; then
+            PYTEST_CMD="$PYTEST_CMD ${{ steps.exclusions.outputs.ignore_args }}"
+          fi
+          echo "Running: $PYTEST_CMD"
+          eval $PYTEST_CMD
+
+        continue-on-error: ${{ !inputs.failOnErrors }}
+
+      - name: Generate Test Summary
+        run: |
+          echo "=== Pytest Execution Summary ===" > pytest-summary.txt
+          echo "Python Version: $PYTHON_VERSION" >> pytest-summary.txt
+          echo "Test Scope: All test files in repository (with exclusions)" >> pytest-summary.txt
+          echo "Config File: $PYTEST_CONFIG" >> pytest-summary.txt
+          echo "Test Pattern: $TEST_PATTERN" >> pytest-summary.txt
+          echo "Verbose Output: $VERBOSE_OUTPUT" >> pytest-summary.txt
+          echo "Coverage Enabled: $GENERATE_COVERAGE" >> pytest-summary.txt
+          echo "Coverage Threshold: $COVERAGE_THRESHOLD%" >> pytest-summary.txt
+          echo "Fail Fast: $FAIL_FAST" >> pytest-summary.txt
+          echo "Max Workers: $MAX_WORKERS" >> pytest-summary.txt
+          echo "Run Markers: $RUN_MARKERS" >> pytest-summary.txt
+          echo "JUnit Output: $JUNIT_OUTPUT" >> pytest-summary.txt
+          echo "HTML Report: $HTML_REPORT" >> pytest-summary.txt
+          echo "Fail on Errors: $FAIL_ON_ERRORS" >> pytest-summary.txt
+          echo "" >> pytest-summary.txt
+          echo "=== Exclusions ===" >> pytest-summary.txt
+          echo "Excluded Folders: $EXCLUDE_FOLDERS" >> pytest-summary.txt
+          echo "Excluded Files: $EXCLUDE_FILES" >> pytest-summary.txt
+          echo "Additional Exclusions: $ADDITIONAL_EXCLUSIONS" >> pytest-summary.txt
+          echo "Applied Ignore Args: ${{ steps.exclusions.outputs.ignore_args }}" >> pytest-summary.txt
+          echo "" >> pytest-summary.txt
+          echo "Date: $(date)" >> pytest-summary.txt
+          echo "" >> pytest-summary.txt
+          echo "=== Tool Information ===" >> pytest-summary.txt
+          uv --version >> pytest-summary.txt 2>&1 || true
+          uv run pytest --version >> pytest-summary.txt 2>&1 || true
+          echo "" >> pytest-summary.txt
+          echo "=== Installed Pytest Plugins ===" >> pytest-summary.txt
+          uv pip list | grep pytest >> pytest-summary.txt || true
+
+      - name: Upload Pytest Results (JUnit XML)
+        if: ${{ inputs.junitOutput }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: pytest-results.xml
+
+      - name: Upload Coverage Results
+        if: ${{ inputs.generateCoverage }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-results
+          path: |
+            coverage.xml
+            htmlcov/
+
+      - name: Upload Test Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-reports
+          path: |
+            pytest-summary.txt
+            test-discovery.txt
+            pytest-report.html
