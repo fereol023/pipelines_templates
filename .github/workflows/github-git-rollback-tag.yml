@@ -1,0 +1,11 @@
+name: placeholder
+
+on:
+    workflow_call:
+
+jobs:
+    empty-job:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Empty step
+            run: echo "This is an empty job."
