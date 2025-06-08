@@ -3,7 +3,7 @@ name: Build and Push Docker Image
 on:
   workflow_call:
     inputs:
-      TAG:
+      GIT_TAG:
         required: true
         type: string
     secrets:
@@ -34,9 +34,10 @@ jobs:
           set -x
           DOCKER_IMAGE_NAME=$(basename $GITHUB_REPOSITORY)
           DOCKER_IMAGE_NAME=$(echo "$DOCKER_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          LATEST_TAG="${{ inputs.TAG }}"
-          TIMESTAMP=$(date +%s)
-          DOCKER_IMAGE_TAG="${LATEST_TAG}-${TIMESTAMP}"
+            LATEST_TAG="${{ inputs.GIT_TAG }}"
+            echo "Fetched input tag: $LATEST_TAG"
+            TIMESTAMP=$(date +%s)
+            DOCKER_IMAGE_TAG="${LATEST_TAG}_${TIMESTAMP}"
           IMAGE_FULL_NAME="${{ secrets.CR_USER }}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
           echo "Docker image name: ${IMAGE_FULL_NAME}"
           docker build --file Dockerfile --tag "$IMAGE_FULL_NAME" .
