@@ -1,0 +1,345 @@
+# Python Pytest Pipeline Template
+# This template can be extended by other repositories to run Python tests with pytest on all test files
+
+parameters:
+  # Python version to use
+  pythonVersion:
+    type: string
+    default: '3.11'
+    displayName: 'Python Version'
+  
+  # Folders to exclude from testing (space-separated)
+  excludeFolders:
+    type: string
+    default: ''
+    displayName: 'Folders to Exclude'
+  
+  # Files to exclude from testing (space-separated, supports glob patterns)
+  excludeFiles:
+    type: string
+    default: ''
+    displayName: 'Files to Exclude'
+  
+  # Additional exclusions (can include both files and folders, space-separated)
+  additionalExclusions:
+    type: string
+    default: ''
+    displayName: 'Additional Exclusions'
+  
+  # Pytest configuration file
+  pytestConfig:
+    type: string
+    default: 'pytest.ini'
+    displayName: 'Pytest Config File'
+  
+  # Test discovery pattern
+  testPattern:
+    type: string
+    default: 'test_*.py *_test.py'
+    displayName: 'Test File Pattern'
+  
+  # Pytest options
+  verboseOutput:
+    type: boolean
+    default: true
+    displayName: 'Verbose Output'
+  
+  generateCoverage:
+    type: boolean
+    default: true
+    displayName: 'Generate Coverage Report'
+  
+  coverageThreshold:
+    type: string
+    default: '80'
+    displayName: 'Coverage Threshold (%)'
+  
+  # Test execution options
+  failFast:
+    type: boolean
+    default: false
+    displayName: 'Stop on First Failure'
+  
+  maxWorkers:
+    type: string
+    default: 'auto'
+    displayName: 'Max Parallel Workers'
+  
+  # Test markers
+  runMarkers:
+    type: string
+    default: ''
+    displayName: 'Run Tests with Markers (e.g., "not slow")'
+  
+  # Output formats
+  junitOutput:
+    type: boolean
+    default: true
+    displayName: 'Generate JUnit XML Report'
+  
+  htmlReport:
+    type: boolean
+    default: true
+    displayName: 'Generate HTML Coverage Report'
+  
+  # Fail pipeline on test failures
+  failOnErrors:
+    type: boolean
+    default: true
+    displayName: 'Fail Pipeline on Test Failures'
+
+jobs:
+- job: PythonTesting
+  displayName: 'Python Testing with Pytest'
+  pool:
+    vmImage: 'ubuntu-latest'
+  
+  steps:
+  - task: UsePythonVersion@0
+    displayName: 'Set Python Version'
+    inputs:
+      versionSpec: '${{ parameters.pythonVersion }}'
+      addToPath: true
+  
+  - script: |
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      source $HOME/.cargo/env
+      echo "##vso[task.prependpath]$HOME/.cargo/bin"
+    displayName: 'Install uv'
+  
+  - script: |
+      uv --version
+      uv pip install pytest pytest-cov pytest-html pytest-xdist pytest-mock
+    displayName: 'Install Pytest and Plugins with uv'
+  
+  # Install project dependencies
+  - script: |
+      if [ -f requirements.txt ]; then
+        echo "Installing from requirements.txt"
+        uv pip install -r requirements.txt
+      elif [ -f requirements-dev.txt ]; then
+        echo "Installing from requirements-dev.txt"
+        uv pip install -r requirements-dev.txt
+      elif [ -f requirements-test.txt ]; then
+        echo "Installing from requirements-test.txt"
+        uv pip install -r requirements-test.txt
+      elif [ -f pyproject.toml ]; then
+        echo "Installing from pyproject.toml"
+        uv pip install -e .
+        # Install test dependencies if they exist
+        uv pip install -e ".[test,dev]" 2>/dev/null || uv pip install -e ".[test]" 2>/dev/null || true
+      fi
+    displayName: 'Install Project Dependencies with uv'
+    condition: succeededOrFailed()
+  
+  # Prepare exclusion patterns for pytest
+  - script: |
+      IGNORE_ARGS=""
+      
+      # Process folder exclusions
+      if [ -n "${{ parameters.excludeFolders }}" ]; then
+        for folder in ${{ parameters.excludeFolders }}; do
+          IGNORE_ARGS="$IGNORE_ARGS --ignore=$folder"
+        done
+      fi
+      
+      # Process file exclusions
+      if [ -n "${{ parameters.excludeFiles }}" ]; then
+        for file in ${{ parameters.excludeFiles }}; do
+          IGNORE_ARGS="$IGNORE_ARGS --ignore=$file"
+        done
+      fi
+      
+      # Process additional exclusions
+      if [ -n "${{ parameters.additionalExclusions }}" ]; then
+        for exclusion in ${{ parameters.additionalExclusions }}; do
+          IGNORE_ARGS="$IGNORE_ARGS --ignore=$exclusion"
+        done
+      fi
+      
+      # Add common exclusions if not already specified
+      COMMON_EXCLUSIONS="__pycache__ .git .venv .env venv env .pytest_cache .mypy_cache .ruff_cache node_modules build dist .tox"
+      for common in $COMMON_EXCLUSIONS; do
+        if [[ "${{ parameters.excludeFolders }} ${{ parameters.additionalExclusions }}" != *"$common"* ]]; then
+          IGNORE_ARGS="$IGNORE_ARGS --ignore=$common"
+        fi
+      done
+      
+      echo "##vso[task.setvariable variable=IGNORE_ARGS]$IGNORE_ARGS"
+      echo "Ignore arguments: $IGNORE_ARGS"
+    displayName: 'Prepare Exclusion Patterns'
+  
+  # Check if config file exists
+  - script: |
+      CONFIG_FILE=""
+      if [ -f "${{ parameters.pytestConfig }}" ]; then
+        echo "Using config file: ${{ parameters.pytestConfig }}"
+        CONFIG_FILE="-c ${{ parameters.pytestConfig }}"
+      elif [ -f "pyproject.toml" ]; then
+        echo "Using pyproject.toml for pytest configuration"
+        CONFIG_FILE=""
+      elif [ -f "setup.cfg" ]; then
+        echo "Using setup.cfg for pytest configuration"
+        CONFIG_FILE=""
+      else
+        echo "No pytest configuration file found"
+        CONFIG_FILE=""
+      fi
+      echo "##vso[task.setvariable variable=CONFIG_FILE]$CONFIG_FILE"
+    displayName: 'Check Config File'
+  
+  # Discover and list test files
+  - script: |
+      echo "=== Test Discovery ===" > test-discovery.txt
+      echo "Test patterns: ${{ parameters.testPattern }}" >> test-discovery.txt
+      echo "Exclusions applied: $(IGNORE_ARGS)" >> test-discovery.txt
+      echo "" >> test-discovery.txt
+      
+      # Collect tests in dry-run mode
+      PYTEST_CMD="uv run pytest --collect-only -q"
+      
+      if [ -n "$(CONFIG_FILE)" ]; then
+        PYTEST_CMD="$PYTEST_CMD $(CONFIG_FILE)"
+      fi
+      
+      if [ -n "$(IGNORE_ARGS)" ]; then
+        PYTEST_CMD="$PYTEST_CMD $(IGNORE_ARGS)"
+      fi
+      
+      echo "Discovery command: $PYTEST_CMD" >> test-discovery.txt
+      eval $PYTEST_CMD >> test-discovery.txt 2>&1 || true
+    displayName: 'Discover Tests'
+    condition: always()
+    continueOnError: true
+  
+  # Run pytest with uv
+  - script: |
+      PYTEST_CMD="uv run pytest"
+      
+      # Add configuration file
+      if [ -n "$(CONFIG_FILE)" ]; then
+        PYTEST_CMD="$PYTEST_CMD $(CONFIG_FILE)"
+      fi
+      
+      # Add verbosity
+      if [ "${{ parameters.verboseOutput }}" = "true" ]; then
+        PYTEST_CMD="$PYTEST_CMD -v"
+      fi
+      
+      # Add fail fast option
+      if [ "${{ parameters.failFast }}" = "true" ]; then
+        PYTEST_CMD="$PYTEST_CMD -x"
+      fi
+      
+      # Add parallel execution
+      if [ "${{ parameters.maxWorkers }}" != "1" ]; then
+        if [ "${{ parameters.maxWorkers }}" = "auto" ]; then
+          PYTEST_CMD="$PYTEST_CMD -n auto"
+        else
+          PYTEST_CMD="$PYTEST_CMD -n ${{ parameters.maxWorkers }}"
+        fi
+      fi
+      
+      # Add markers
+      if [ -n "${{ parameters.runMarkers }}" ]; then
+        PYTEST_CMD="$PYTEST_CMD -m '${{ parameters.runMarkers }}'"
+      fi
+      
+      # Add coverage options
+      if [ "${{ parameters.generateCoverage }}" = "true" ]; then
+        PYTEST_CMD="$PYTEST_CMD --cov=. --cov-report=term-missing"
+        
+        if [ "${{ parameters.htmlReport }}" = "true" ]; then
+          PYTEST_CMD="$PYTEST_CMD --cov-report=html:htmlcov"
+        fi
+        
+        PYTEST_CMD="$PYTEST_CMD --cov-report=xml --cov-fail-under=${{ parameters.coverageThreshold }}"
+      fi
+      
+      # Add JUnit XML output
+      if [ "${{ parameters.junitOutput }}" = "true" ]; then
+        PYTEST_CMD="$PYTEST_CMD --junitxml=pytest-results.xml"
+      fi
+      
+      # Add HTML report
+      if [ "${{ parameters.htmlReport }}" = "true" ]; then
+        PYTEST_CMD="$PYTEST_CMD --html=pytest-report.html --self-contained-html"
+      fi
+      
+      # Add ignore arguments
+      if [ -n "$(IGNORE_ARGS)" ]; then
+        PYTEST_CMD="$PYTEST_CMD $(IGNORE_ARGS)"
+      fi
+      
+      echo "Running: $PYTEST_CMD"
+      eval $PYTEST_CMD
+    displayName: 'Run Pytest with uv'
+    condition: succeededOrFailed()
+    continueOnError: ${{ not(parameters.failOnErrors) }}
+  
+  # Generate detailed test report
+  - script: |
+      echo "=== Pytest Execution Summary ===" > pytest-summary.txt
+      echo "Python Version: ${{ parameters.pythonVersion }}" >> pytest-summary.txt
+      echo "Test Scope: All test files in repository (with exclusions)" >> pytest-summary.txt
+      echo "Config File: ${{ parameters.pytestConfig }}" >> pytest-summary.txt
+      echo "Test Pattern: ${{ parameters.testPattern }}" >> pytest-summary.txt
+      echo "Verbose Output: ${{ parameters.verboseOutput }}" >> pytest-summary.txt
+      echo "Coverage Enabled: ${{ parameters.generateCoverage }}" >> pytest-summary.txt
+      echo "Coverage Threshold: ${{ parameters.coverageThreshold }}%" >> pytest-summary.txt
+      echo "Fail Fast: ${{ parameters.failFast }}" >> pytest-summary.txt
+      echo "Max Workers: ${{ parameters.maxWorkers }}" >> pytest-summary.txt
+      echo "Run Markers: ${{ parameters.runMarkers }}" >> pytest-summary.txt
+      echo "JUnit Output: ${{ parameters.junitOutput }}" >> pytest-summary.txt
+      echo "HTML Report: ${{ parameters.htmlReport }}" >> pytest-summary.txt
+      echo "Fail on Errors: ${{ parameters.failOnErrors }}" >> pytest-summary.txt
+      echo "" >> pytest-summary.txt
+      echo "=== Exclusions ===" >> pytest-summary.txt
+      echo "Excluded Folders: ${{ parameters.excludeFolders }}" >> pytest-summary.txt
+      echo "Excluded Files: ${{ parameters.excludeFiles }}" >> pytest-summary.txt
+      echo "Additional Exclusions: ${{ parameters.additionalExclusions }}" >> pytest-summary.txt
+      echo "Applied Ignore Args: $(IGNORE_ARGS)" >> pytest-summary.txt
+      echo "" >> pytest-summary.txt
+      echo "Date: $(date)" >> pytest-summary.txt
+      echo "" >> pytest-summary.txt
+      
+      # Add pytest and uv version info
+      echo "=== Tool Information ===" >> pytest-summary.txt
+      uv --version >> pytest-summary.txt 2>&1 || true
+      uv run pytest --version >> pytest-summary.txt 2>&1 || true
+      
+      # Add installed pytest plugins
+      echo "" >> pytest-summary.txt
+      echo "=== Installed Pytest Plugins ===" >> pytest-summary.txt
+      uv pip list | grep pytest >> pytest-summary.txt || true
+    displayName: 'Generate Test Summary'
+    condition: always()
+  
+  # Publish test results
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFiles: 'pytest-results.xml'
+      testRunTitle: 'Python Tests'
+      failTaskOnFailedTests: ${{ parameters.failOnErrors }}
+    condition: and(always(), eq('${{ parameters.junitOutput }}', 'true'))
+  
+  # Publish code coverage results
+  - task: PublishCodeCoverageResults@1
+    displayName: 'Publish Coverage Results'
+    inputs:
+      codeCoverageTool: 'Cobertura'
+      summaryFileLocation: 'coverage.xml'
+      reportDirectory: 'htmlcov'
+      failIfCoverageEmpty: false
+    condition: and(always(), eq('${{ parameters.generateCoverage }}', 'true'))
+  
+  # Publish all artifacts
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Test Artifacts'
+    inputs:
+      pathToPublish: '.'
+      artifactName: 'pytest-reports'
+      publishLocation: 'Container'
+    condition: always()
+    continueOnError: true

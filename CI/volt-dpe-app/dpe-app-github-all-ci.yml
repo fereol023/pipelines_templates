@@ -1,1 +1,22 @@
+parameters:
+  # Python version to use : overrides pipelines called
+  pythonVersion:
+    type: string
+    default: '3.11'
+    displayName: 'Python Version'
 
+on:
+  pull_request:
+    branches:
+      - main
+
+stages:
+- stage:
+    jobs:
+      - template: ../CI/common/jobs/github-python-pytests.yml
+        parameters:
+          pythonVersion: ${{ parameters.pythonVersion }}
+          
+      # - template: ../CI/common/jobs/github-python-linter.yml
+        # parameters:
+        #   pythonVersion: ${{ parameters.pythonVersion }}
