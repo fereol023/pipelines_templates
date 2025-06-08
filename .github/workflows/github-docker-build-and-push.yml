@@ -4,9 +4,8 @@ on:
   workflow_call:
     inputs:
       TAG:
-        required: false
+        required: true
         type: string
-        default: ${{ github.run_id }}
     secrets:
       CR_USER:
         required: true
