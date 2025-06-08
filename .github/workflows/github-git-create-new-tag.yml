@@ -1,12 +1,15 @@
 name: Gitflow create a new tag
-
 on:
     workflow_call:
-        secrets:
-            # tous les workflow qui appellent 
-            # celui ci doivent passer leur github PAT
-            github_personal_access_token:
-                required: True
+      secrets:
+        # tous les workflow qui appellent 
+        # celui ci doivent passer leur github PAT
+        github_personal_access_token:
+            required: True
+      outputs:
+        new_tag_created:
+          description: "new tag reutilisable ailleurs"
+          value: ${{ jobs.create-new-git-tag.outputs.new_tag_created }}
 jobs:
   create-new-git-tag:
     runs-on: ubuntu-latest
