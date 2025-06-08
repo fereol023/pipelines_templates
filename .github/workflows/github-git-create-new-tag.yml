@@ -10,8 +10,6 @@ on:
 jobs:
   create-new-git-tag:
     runs-on: ubuntu-latest
-    outputs:
-        new_tag_created: ${{ steps.tag-creation.outputs.NEW_TAG }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -93,3 +91,6 @@ jobs:
           echo "NEW_TAG=${NEW_TAG}" >> "$GITHUB_OUTPUT"
           git tag ${NEW_TAG}
           git push https://${{ secrets.github_personal_access_token }}@github.com/${{ github.repository }}.git ${NEW_TAG}
+    
+    outputs:
+        new_tag_created: ${{ steps.tag-creation.outputs.NEW_TAG }}
