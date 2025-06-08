@@ -2,7 +2,11 @@ name: Gitflow create a new tag
 
 on:
     workflow_call:
-
+        secrets:
+            # tous les workflow qui appellent 
+            # celui ci doivent passer leur github PAT
+            github_personal_access_token:
+                required: True
 jobs:
   create-new-git-tag:
     runs-on: ubuntu-latest
@@ -88,4 +92,4 @@ jobs:
           echo ${NEW_TAG}
           echo "NEW_TAG=${NEW_TAG}" >> "$GITHUB_OUTPUT"
           git tag ${NEW_TAG}
-          git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git ${NEW_TAG}
+          git push https://${{ secrets.github_personal_access_token }}@github.com/${{ github.repository }}.git ${NEW_TAG}
