@@ -34,7 +34,9 @@ jobs:
 
         - name: Clone submodules
           if: ${{ inputs.hasSubmodules }}
-          run: git submodule update --init --recursive
+          run: |
+            git submodule update --init --recursive
+            git checkout main
 
         - name: Install dependencies
           run: |
