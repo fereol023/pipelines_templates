@@ -36,7 +36,7 @@ jobs:
           if: ${{ inputs.hasSubmodules }}
           run: |
             git submodule update --init --recursive
-            git checkout main
+            git submodule foreach 'git checkout main || echo "main branch not found in $name"'
 
         - name: Install dependencies
           run: |
