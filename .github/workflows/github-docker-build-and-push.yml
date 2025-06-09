@@ -37,7 +37,7 @@ jobs:
             LATEST_TAG="${{ inputs.GIT_TAG }}"
             echo "Fetched input tag: $LATEST_TAG"
             TIMESTAMP=$(date +%s)
-            DOCKER_IMAGE_TAG="${LATEST_TAG}_${TIMESTAMP}"
+            DOCKER_IMAGE_TAG="${LATEST_TAG}.${TIMESTAMP}"
           IMAGE_FULL_NAME="${{ secrets.CR_USER }}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
           echo "Docker image name: ${IMAGE_FULL_NAME}"
           docker build --file Dockerfile --tag "$IMAGE_FULL_NAME" .
