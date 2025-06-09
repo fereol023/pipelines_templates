@@ -6,6 +6,11 @@ on:
       GIT_TAG:
         required: true
         type: string
+      hasSubmodules:
+        description: 'whether the repos has submodules'
+        required: false
+        default: false
+        type: boolean
     secrets:
       CR_USER:
         required: true
@@ -21,6 +26,12 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+    
+      - name: Clone submodules
+        if: ${{ inputs.hasSubmodules }}
+        run: |
+          git submodule update --init --recursive
+          git submodule foreach 'git checkout main || echo "main branch not found in $name"'
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
