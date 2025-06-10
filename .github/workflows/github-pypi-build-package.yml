@@ -42,7 +42,7 @@ jobs:
 
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/volt-dpe-blank-proj
+      url: https://test.pypi.org/p/DPE-Energy-Performance-Analysis-ETL-pkg
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
