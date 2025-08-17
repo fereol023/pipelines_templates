@@ -43,8 +43,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build the Docker image
-        id: build-docker-image
+      - name: Build and push the Docker image
+        id: build-push-docker-image
         run: |
           set -x
           DOCKER_IMAGE_NAME=$(basename $GITHUB_REPOSITORY)
@@ -55,10 +55,5 @@ jobs:
             DOCKER_IMAGE_TAG="${LATEST_TAG}.${TIMESTAMP}"
           IMAGE_FULL_NAME="${{ secrets.CR_USER }}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
           echo "Docker image name: ${IMAGE_FULL_NAME}"
-          docker buildx build --platform linux/amd64,linux/arm64 --file Dockerfile --tag "$IMAGE_FULL_NAME" .
-          echo "docker_image_built=$IMAGE_FULL_NAME" >> "$GITHUB_ENV"
-
-      - name: Push Docker image
-        run: |
-          echo "Pushing docker image : $docker_image_built"
-          docker push "$docker_image_built"
+          docker buildx build --platform linux/amd64,linux/arm64 --file Dockerfile --tag "$IMAGE_FULL_NAME" --push .
+          echo "docker_image_built_and_pushed=$IMAGE_FULL_NAME" >> "$GITHUB_ENV"
