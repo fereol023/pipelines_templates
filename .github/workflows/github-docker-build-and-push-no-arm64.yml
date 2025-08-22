@@ -1,0 +1,59 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      GIT_TAG:
+        required: true
+        type: string
+      hasSubmodules:
+        description: 'whether the repos has submodules'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      CR_USER:
+        required: true
+      CR_PWD:
+        required: true
+
+jobs:
+  build-and-push-docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+    
+      - name: Clone submodules
+        if: ${{ inputs.hasSubmodules }}
+        run: |
+          git submodule update --init --recursive
+          git submodule foreach 'git checkout main || echo "main branch not found in $name"'
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.CR_USER }}
+          password: ${{ secrets.CR_PWD }}
+
+      # enable multi archi builder
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the Docker image
+        id: build-push-docker-image
+        run: |
+          set -x
+          DOCKER_IMAGE_NAME=$(basename $GITHUB_REPOSITORY)
+          DOCKER_IMAGE_NAME=$(echo "$DOCKER_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+            LATEST_TAG="${{ inputs.GIT_TAG }}"
+            echo "Fetched input tag: $LATEST_TAG"
+            TIMESTAMP=$(date +%s)
+            DOCKER_IMAGE_TAG="${LATEST_TAG}.${TIMESTAMP}"
+          IMAGE_FULL_NAME="${{ secrets.CR_USER }}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+          echo "Docker image name: ${IMAGE_FULL_NAME}"
+          docker buildx build --platform linux/amd64 --file Dockerfile --tag "$IMAGE_FULL_NAME" --push .
+          echo "docker_image_built_and_pushed=$IMAGE_FULL_NAME" >> "$GITHUB_ENV"
