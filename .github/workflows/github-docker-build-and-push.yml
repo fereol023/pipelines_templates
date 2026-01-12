@@ -11,6 +11,11 @@ on:
         required: false
         default: false
         type: boolean
+      dockerfile_path:
+        description: 'Path to the Dockerfile'
+        required: false
+        default: 'Dockerfile'
+        type: string
     secrets:
       CR_USER:
         required: true
@@ -55,5 +60,9 @@ jobs:
             DOCKER_IMAGE_TAG="${LATEST_TAG}.${TIMESTAMP}"
           IMAGE_FULL_NAME="${{ secrets.CR_USER }}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
           echo "Docker image name: ${IMAGE_FULL_NAME}"
-          docker buildx build --platform linux/amd64,linux/arm64 --file Dockerfile --tag "$IMAGE_FULL_NAME" --push .
+          if [ ! -f "${{ inputs.dockerfile_path }}" ]; then
+            echo "Dockerfile not found at path: ${{ inputs.dockerfile_path }}"
+            exit 1
+          fi
+          docker buildx build --platform linux/amd64,linux/arm64 --file "${{ inputs.dockerfile_path }}" --tag "$IMAGE_FULL_NAME" --push .
           echo "docker_image_built_and_pushed=$IMAGE_FULL_NAME" >> "$GITHUB_ENV"
