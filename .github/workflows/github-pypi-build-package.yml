@@ -5,6 +5,19 @@ on:
     secrets:
       PYPI_API_TOKEN:
         required: true
+    inputs:
+      INDEX_URL:
+        description: 'The Python Package Index URL to publish to'
+        required: false
+        default: 'https://test.pypi.org/legacy/'
+        type: string
+      PROJECT_URL:
+        description: 'The Python Package Index URL to view the published package'
+        required: false
+        default: 'https://test.pypi.org/project/DPE-Energy-Performance-Analysis-ETL-pkg/'
+        type: string
+      
+
 
 jobs:
   build:
@@ -33,15 +46,15 @@ jobs:
         name: python-package-distributions
         path: dist/
 
-  publish-to-testpypi:
-    name: Publish Python 🐍 distribution 📦 to TestPyPI
+  publish-to-pypi:
+    name: Publish Python 🐍 distribution 📦 to PyPI
     needs:
     - build
     runs-on: ubuntu-latest
 
     environment:
-      name: testpypi
-      url: https://test.pypi.org/p/DPE-Energy-Performance-Analysis-ETL-pkg
+      name: pypi-publishing
+      url: ${{ inputs.PROJECT_URL }}
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
@@ -53,8 +66,8 @@ jobs:
         name: python-package-distributions
         path: dist/
 
-    - name: Publish distribution 📦 to TestPyPI
+    - name: Publish distribution 📦 to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
-        repository-url: https://test.pypi.org/legacy/
+        repository-url: ${{ inputs.INDEX_URL }}
         password: ${{ secrets.PYPI_API_TOKEN }}
