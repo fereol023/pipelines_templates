@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
 
     environment:
-      name: pypi-publishing
+      name: testpypi
       url: ${{ inputs.PROJECT_URL }}
 
     permissions:
